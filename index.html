@@ -120,7 +120,8 @@ html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); }
 .pe th:first-child, .pe td:first-child, .pe th.l, .pe td.l { text-align: left; }
 .pe tr:last-child td { border-bottom: 0; }
 .pe td.neg { color: var(--color-bad); }
-.pe td .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.pe td .sw, .pe h3 .sw { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.pe h3 .sw { width: 10px; height: 10px; margin-right: 8px; vertical-align: 1px; }
 .pe select { font: inherit; font-size: var(--cds-font-size-caption); color: var(--color-fg); background: var(--color-bg); border: 1px solid var(--color-border-line); border-radius: 6px; padding: 3px 6px; }
 [data-dash-source-state=empty] { color: transparent; }
 [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
@@ -174,19 +175,33 @@ html, body { margin: 0; background: var(--color-bg); color: var(--color-fg); }
       </label>
     </h2>
     <div class="pe-grid pe-grid2" id="ativ-grid"></div>
-    <div class="pe-card">
-      <h3 id="t-ativ-tab">Último mês por indicador</h3>
-      <p class="pe-note">Varejo: volume de vendas (PMC). Serviços: volume (PMS). Indústria: produção física (PIM-PF). Atividade: IBC-Br e IBCR-RS, do Banco Central.</p>
-      <div class="pe-tablebox">
-        <table id="tab-ativ" data-source="atividade_ultimo" data-row-key="indicador,regiao">
-          <thead><tr>
-            <th data-field="indicador">Indicador</th><th data-field="regiao" class="l">Região</th><th data-field="data">Mês</th>
-            <th data-field="var_mm">No mês, dessaz.</th><th data-field="var_aa">Contra mesmo mês</th><th data-field="var_12m">Em 12 meses</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
+    <div class="pe-grid pe-grid2">
+      <div class="pe-card">
+        <h3 id="t-ativ-tab-br"><span class="sw" style="background:var(--s1)"></span>Brasil: último mês por indicador</h3>
+        <div class="pe-tablebox">
+          <table id="tab-ativ-br" data-source="atividade_ultimo" data-row-key="indicador,regiao">
+            <thead><tr>
+              <th data-field="indicador">Indicador</th><th data-field="data">Mês</th>
+              <th data-field="var_mm">No mês, dessaz.</th><th data-field="var_aa">Contra mesmo mês</th><th data-field="var_12m">Em 12 meses</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="pe-card">
+        <h3 id="t-ativ-tab-rs"><span class="sw" style="background:var(--s2)"></span>Rio Grande do Sul: último mês por indicador</h3>
+        <div class="pe-tablebox">
+          <table id="tab-ativ-rs" data-source="atividade_ultimo" data-row-key="indicador,regiao">
+            <thead><tr>
+              <th data-field="indicador">Indicador</th><th data-field="data">Mês</th>
+              <th data-field="var_mm">No mês, dessaz.</th><th data-field="var_aa">Contra mesmo mês</th><th data-field="var_12m">Em 12 meses</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </div>
+    <p class="pe-note">Varejo: volume de vendas (PMC). Serviços: volume (PMS). Indústria: produção física (PIM-PF). Atividade: IBC-Br e IBCR-RS, do Banco Central.</p>
   </section>
 
   <section class="pe-sec" id="sec-inflacao">
@@ -571,17 +586,19 @@ function desenha() {
       grafLinhas(elsAt[k], ser, { zero: m !== 'indice_sa', sufixo: m === 'indice_sa' ? '' : '%' });
     });
   }
-  const ua = dash.data('atividade_ultimo'), tb = document.querySelector('#tab-ativ tbody');
+  const ua = dash.data('atividade_ultimo');
   if (ua.status === 'ok') {
-    tb.replaceChildren();
-    const ordem = (r) => IND.indexOf(r.indicador) * 2 + (r.regiao === 'RS' ? 1 : 0);
-    for (const r of [...ua.data].sort((a, b) => ordem(a) - ordem(b))) {
-      const tr = document.createElement('tr');
-      const td = (t, cls) => { const c = document.createElement('td'); c.textContent = t; if (cls) c.className = cls; tr.appendChild(c); return c; };
-      const c0 = td(r.indicador); td(r.regiao, 'l'); td(mesTxt(parseD(r.data)));
-      for (const k of ['var_mm', 'var_aa', 'var_12m']) td(r[k] == null ? '—' : sinal(r[k], f1) + '%', r[k] < 0 ? 'neg' : '');
-      const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = r.regiao === 'RS' ? C[1] : C[0]; tr.children[1].prepend(sw);
-      tb.appendChild(tr);
+    for (const [reg, id] of [['Brasil', 'br'], ['RS', 'rs']]) {      // uma tabela para o Brasil e outra para o RS
+      const tb = document.querySelector(`#tab-ativ-${id} tbody`);
+      tb.replaceChildren();
+      const linhas = ua.data.filter(r => r.regiao === reg).sort((a, b) => IND.indexOf(a.indicador) - IND.indexOf(b.indicador));
+      for (const r of linhas) {
+        const tr = document.createElement('tr');
+        const td = (t, cls) => { const c = document.createElement('td'); c.textContent = t; if (cls) c.className = cls; tr.appendChild(c); return c; };
+        td(r.indicador); td(mesTxt(parseD(r.data)));
+        for (const k of ['var_mm', 'var_aa', 'var_12m']) td(r[k] == null ? '—' : sinal(r[k], f1) + '%', r[k] < 0 ? 'neg' : '');
+        tb.appendChild(tr);
+      }
     }
   }
 
