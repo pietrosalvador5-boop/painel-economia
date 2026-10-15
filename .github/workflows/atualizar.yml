@@ -20,7 +20,7 @@ jobs:
     env:
       TZ: America/Sao_Paulo
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Baixa os dados
         run: python3 python/coleta.py
