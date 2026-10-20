@@ -27,19 +27,34 @@ METAS = {2015: (4.5, 2.0), 2016: (4.5, 2.0), 2017: (4.5, 1.5), 2018: (4.5, 1.5),
 
 
 # ---------- download ----------
-def baixar(url, tentativas=5):
-    """JSON de uma URL, pelo curl do sistema (evita problemas de certificado do Python no Mac)."""
+def baixar(url, tentativas=6):
+    """JSON de uma URL, pelo curl do sistema (evita problemas de certificado do Python no Mac).
+
+    O SGS do Banco Central limita a frequência de consultas: quando muitas séries são pedidas em
+    sequência, ele devolve página de erro em vez de JSON. A espera entre as tentativas dobra
+    (10, 20, 40, 80 e 120 s) para dar tempo de a restrição passar, e o código HTTP entra na
+    mensagem, para o log dizer se foi bloqueio (429), indisponibilidade (503) ou outra coisa.
+    """
+    codigo = ""
     for i in range(tentativas):
-        r = subprocess.run(["curl", "-s", "-m", "180", url], capture_output=True)
+        r = subprocess.run(["curl", "-s", "-m", "180", "-w", "\n%{http_code}", url],
+                           capture_output=True, text=True)
+        corpo, codigo = r.stdout.rsplit("\n", 1) if "\n" in r.stdout else (r.stdout, "")
         try:
-            return json.loads(r.stdout)
+            return json.loads(corpo)
         except ValueError:
-            print(f"  sem resposta ({url[:70]}...), tentando de novo em 10 s")
-            time.sleep(10)
-    raise RuntimeError(f"Fonte não respondeu: {url}")
+            if i == tentativas - 1:
+                break
+            espera = min(10 * 2 ** i, 120)
+            print(f"  sem resposta de {url[:70]}... (HTTP {codigo or 'nenhum'}, curl {r.returncode}); "
+                  f"tentando de novo em {espera} s", flush=True)
+            time.sleep(espera)
+    raise RuntimeError(f"Fonte não respondeu em {tentativas} tentativas "
+                       f"(HTTP {codigo or 'nenhum'}, curl {r.returncode}): {url}")
 
 
 def sgs(codigo, inicio=BUSCA, fim=None):
+    time.sleep(1.5)        # espaça as consultas: o SGS recusa quem pede muitas séries seguidas
     fim = fim or HOJE.strftime("%d/%m/%Y")
     x = baixar(f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados?formato=json"
                f"&dataInicial={inicio}&dataFinal={fim}")
@@ -227,11 +242,25 @@ def focus():
     gravar("focus", ["indicador", "ano", "data_pesquisa", "mediana"], linhas)
 
 
+ETAPAS = (atividade, precos, juros_cambio, trabalho, pib, focus)
+
+
 def main():
+    """Roda cada fonte separadamente: se uma não responder, mantém o CSV anterior dela e segue com as outras.
+
+    As fontes que falharam ficam em falhas.txt; o robô do GitHub publica o resto e depois avisa a falha.
+    """
     DADOS.mkdir(exist_ok=True)
-    for etapa in (atividade, precos, juros_cambio, trabalho, pib, focus):
-        etapa()
-    print("Coleta concluída em", time.strftime("%d/%m/%Y %H:%M"))
+    falhas = []
+    for etapa in ETAPAS:
+        try:
+            etapa()
+        except Exception as e:                       # erro de uma fonte não para as outras
+            print(f"FALHOU {etapa.__name__}: {e} (mantido o dado anterior)", flush=True)
+            falhas.append(f"{etapa.__name__}: {e}")
+    (PASTA / "falhas.txt").write_text("".join(f + "\n" for f in falhas), encoding="utf-8")
+    print("Coleta concluída em", time.strftime("%d/%m/%Y %H:%M"),
+          f"({len(falhas)} fonte(s) com falha)" if falhas else "")
 
 
 if __name__ == "__main__":
